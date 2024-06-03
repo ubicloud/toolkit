@@ -20,7 +20,9 @@ export interface ArtifactCacheList {
 }
 
 export interface CommitCacheRequest {
-  size: number
+  size: number,
+  uploadId: string,
+  etags: string[]
 }
 
 export interface ReserveCacheRequest {
@@ -30,7 +32,9 @@ export interface ReserveCacheRequest {
 }
 
 export interface ReserveCacheResponse {
-  cacheId: number
+  uploadId: string
+  presignedUrls: string[]
+  chunkSize: number
 }
 
 export interface InternalCacheOptions {
