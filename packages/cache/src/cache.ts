@@ -3,7 +3,7 @@ import * as path from 'path'
 import * as utils from './internal/cacheUtils'
 import * as cacheHttpClient from './internal/cacheHttpClient'
 import {createTar, extractTar, listTar} from './internal/tar'
-import {DownloadOptions, UploadOptions} from './options'
+import {DownloadOptions, UploadOptions, getUploadOptions} from './options'
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -173,6 +173,9 @@ export async function saveCache(
 
   const compressionMethod = await utils.getCompressionMethod()
   let cacheId = -1
+  let uploadId = ''
+  let presignedUrls: string[] = []
+  const uploadOptions = getUploadOptions(options)
 
   const cachePaths = await utils.resolvePaths(paths)
   core.debug('Cache Paths:')
@@ -221,8 +224,11 @@ export async function saveCache(
       }
     )
 
-    if (reserveCacheResponse?.result?.cacheId) {
-      cacheId = reserveCacheResponse?.result?.cacheId
+    if (reserveCacheResponse?.result?.uploadId && reserveCacheResponse?.result?.presignedUrls && reserveCacheResponse?.result?.chunkSize) {
+      cacheId = 0 // It should return a integer different than -1 for compatibility
+      uploadId = reserveCacheResponse?.result?.uploadId
+      presignedUrls = reserveCacheResponse?.result?.presignedUrls
+      uploadOptions.uploadChunkSize = reserveCacheResponse?.result?.chunkSize
     } else if (reserveCacheResponse?.statusCode === 400) {
       throw new Error(
         reserveCacheResponse?.error?.message ??
@@ -237,7 +243,7 @@ export async function saveCache(
     }
 
     core.debug(`Saving Cache (ID: ${cacheId})`)
-    await cacheHttpClient.saveCache(cacheId, archivePath, options)
+    await cacheHttpClient.saveCache(cacheId, archivePath, uploadId, presignedUrls, uploadOptions)
   } catch (error) {
     const typedError = error as Error
     if (typedError.name === ValidationError.name) {

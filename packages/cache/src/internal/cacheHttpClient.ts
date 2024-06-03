@@ -242,7 +242,7 @@ async function uploadChunk(
   openStream: () => NodeJS.ReadableStream,
   start: number,
   end: number
-): Promise<void> {
+): Promise<string | undefined> {
   core.debug(
     `Uploading chunk of size ${
       end - start + 1
@@ -253,14 +253,14 @@ async function uploadChunk(
   )
   const additionalHeaders = {
     'Content-Type': 'application/octet-stream',
-    'Content-Range': getContentRange(start, end)
+    'Content-Length': end - start + 1
   }
 
   const uploadChunkResponse = await retryHttpClientResponse(
     `uploadChunk (start: ${start}, end: ${end})`,
     async () =>
       httpClient.sendStream(
-        'PATCH',
+        'PUT',
         resourceUrl,
         openStream(),
         additionalHeaders
@@ -268,18 +268,24 @@ async function uploadChunk(
   )
 
   if (!isSuccessStatusCode(uploadChunkResponse.message.statusCode)) {
+    core.debug(
+      `Chunk upload failed: ${await uploadChunkResponse.readBody()}`
+    )
     throw new Error(
       `Cache service responded with ${uploadChunkResponse.message.statusCode} during upload chunk.`
     )
   }
+
+  return uploadChunkResponse.message.headers.etag
 }
 
 async function uploadFile(
   httpClient: HttpClient,
   cacheId: number,
   archivePath: string,
+  presignedUrls: string[],
   options?: UploadOptions
-): Promise<void> {
+): Promise<string[]> {
   // Upload Chunks
   const fileSize = utils.getArchiveFileSizeInBytes(archivePath)
   const resourceUrl = getCacheApiUrl(`caches/${cacheId.toString()}`)
@@ -295,56 +301,62 @@ async function uploadFile(
     uploadOptions.uploadChunkSize
   )
 
-  const parallelUploads = [...new Array(concurrency).keys()]
+  const parallelUploads = presignedUrls
   core.debug('Awaiting all uploads')
-  let offset = 0
 
+  let etags: string[] = []
   try {
-    await Promise.all(
-      parallelUploads.map(async () => {
-        while (offset < fileSize) {
-          const chunkSize = Math.min(fileSize - offset, maxChunkSize)
-          const start = offset
-          const end = offset + chunkSize - 1
-          offset += maxChunkSize
+    etags = await Promise.all(
+      parallelUploads.map(async (url, index) => {
+        const offset = index * maxChunkSize;
+        const chunkSize = Math.min(fileSize - offset, maxChunkSize)
+        const start = offset
+        const end = offset + chunkSize - 1
 
-          await uploadChunk(
-            httpClient,
-            resourceUrl,
-            () =>
-              fs
-                .createReadStream(archivePath, {
-                  fd,
-                  start,
-                  end,
-                  autoClose: false
-                })
-                .on('error', error => {
-                  throw new Error(
-                    `Cache upload failed because file read failed with ${error.message}`
-                  )
-                }),
-            start,
-            end
-          )
-        }
+        core.debug(`Uploading #${index} chunk url:${url}: start:${start} end:${end} size:${fileSize}`)
+        const etag = await uploadChunk(
+          httpClient,
+          url,
+          () =>
+            fs
+              .createReadStream(archivePath, {
+                fd,
+                start,
+                end,
+                autoClose: false
+              })
+              .on('error', error => {
+                throw new Error(
+                  `Cache upload failed because file read failed with ${error.message}`
+                )
+              }),
+          start,
+          end
+        ) ?? ""
+        core.debug(`Completed to upload #${index} chunk etag:${etag}`)
+        return etag
       })
     )
+  } catch (error) {
+    core.debug(`Failed to upload cache: ${JSON.stringify(error)}`)
+    throw error
   } finally {
     fs.closeSync(fd)
   }
-  return
+  return etags
 }
 
 async function commitCache(
   httpClient: HttpClient,
   cacheId: number,
-  filesize: number
+  filesize: number,
+  uploadId: string,
+  etags: string[]
 ): Promise<TypedResponse<null>> {
-  const commitCacheRequest: CommitCacheRequest = {size: filesize}
+  const commitCacheRequest: CommitCacheRequest = {size: filesize, uploadId, etags}
   return await retryTypedResponse('commitCache', async () =>
     httpClient.postJson<null>(
-      getCacheApiUrl(`caches/${cacheId.toString()}`),
+      getCacheApiUrl('caches/commit'),
       commitCacheRequest
     )
   )
@@ -353,12 +365,16 @@ async function commitCache(
 export async function saveCache(
   cacheId: number,
   archivePath: string,
+  uploadId: string,
+  presignedUrls: string[],
   options?: UploadOptions
 ): Promise<void> {
   const httpClient = createHttpClient()
+  const blobHttpClient = new HttpClient('ubicloud/cache')
 
   core.debug('Upload cache')
-  await uploadFile(httpClient, cacheId, archivePath, options)
+  let etags = await uploadFile(blobHttpClient, cacheId, archivePath, presignedUrls, options)
+  core.debug('etags: ' + JSON.stringify(etags))
 
   // Commit Cache
   core.debug('Commiting cache')
@@ -367,7 +383,7 @@ export async function saveCache(
     `Cache Size: ~${Math.round(cacheSize / (1024 * 1024))} MB (${cacheSize} B)`
   )
 
-  const commitCacheResponse = await commitCache(httpClient, cacheId, cacheSize)
+  const commitCacheResponse = await commitCache(httpClient, cacheId, cacheSize, uploadId, etags)
   if (!isSuccessStatusCode(commitCacheResponse.statusCode)) {
     throw new Error(
       `Cache service responded with ${commitCacheResponse.statusCode} during commit cache.`
