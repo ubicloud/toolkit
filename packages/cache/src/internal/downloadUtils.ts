@@ -172,7 +172,7 @@ export async function downloadCacheHttpClient(
   archivePath: string
 ): Promise<void> {
   const writeStream = fs.createWriteStream(archivePath)
-  const httpClient = new HttpClient('actions/cache')
+  const httpClient = new HttpClient('ubicloud/cache')
   const downloadResponse = await retryHttpClientResponse(
     'downloadCache',
     async () => httpClient.get(archiveLocation)
@@ -215,7 +215,7 @@ export async function downloadCacheHttpClientConcurrent(
   options: DownloadOptions
 ): Promise<void> {
   const archiveDescriptor = await fs.promises.open(archivePath, 'w')
-  const httpClient = new HttpClient('actions/cache', undefined, {
+  const httpClient = new HttpClient('ubicloud/cache', undefined, {
     socketTimeout: options.timeoutInMs,
     keepAlive: true
   })

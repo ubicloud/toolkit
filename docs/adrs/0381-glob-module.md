@@ -146,7 +146,7 @@ Example:
 jobs:
   build:
     steps:
-      - uses: actions/cache@v1
+      - uses: ubicloud/cache@v1
         with:
           hash: ${{ hashFiles('--follow-symbolic-links', '**/package-lock.json') }}
 ```
