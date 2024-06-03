@@ -196,7 +196,11 @@ export async function downloadCache(
       await downloadCacheHttpClient(archiveLocation, archivePath)
     }
   } else {
-    await downloadCacheHttpClient(archiveLocation, archivePath)
+    await downloadCacheHttpClientConcurrent(
+      archiveLocation,
+      archivePath,
+      downloadOptions
+    )
   }
 }
 
