@@ -40,12 +40,12 @@ import {
 const versionSalt = '1.0'
 
 function getCacheApiUrl(resource: string): string {
-  const baseUrl: string = process.env['ACTIONS_CACHE_URL'] || ''
+  const baseUrl: string = process.env['UBICLOUD_CACHE_URL'] || ''
   if (!baseUrl) {
     throw new Error('Cache Service Url not found, unable to restore cache.')
   }
 
-  const url = `${baseUrl}_apis/artifactcache/${resource}`
+  const url = `${baseUrl}${resource}`
   core.debug(`Resource Url: ${url}`)
   return url
 }
@@ -65,11 +65,11 @@ function getRequestOptions(): RequestOptions {
 }
 
 function createHttpClient(): HttpClient {
-  const token = process.env['ACTIONS_RUNTIME_TOKEN'] || ''
+  const token = process.env['UBICLOUD_RUNTIME_TOKEN'] || ''
   const bearerCredentialHandler = new BearerCredentialHandler(token)
 
   return new HttpClient(
-    'actions/cache',
+    'ubicloud/cache',
     [bearerCredentialHandler],
     getRequestOptions()
   )
