@@ -222,17 +222,17 @@ export async function downloadCacheHttpClientConcurrent(
   try {
     const res = await retryHttpClientResponse(
       'downloadCacheMetadata',
-      async () => await httpClient.request('HEAD', archiveLocation, null, {})
+      async () => await httpClient.get(archiveLocation, { Range: 'bytes=0-1' })
     )
 
-    const lengthHeader = res.message.headers['content-length']
-    if (lengthHeader === undefined || lengthHeader === null) {
-      throw new Error('Content-Length not found on blob response')
+    const contentRangeHeader = res.message.headers['content-range']
+    if (contentRangeHeader === undefined || contentRangeHeader === null) {
+      throw new Error('Content-Range not found on blob response')
     }
 
-    const length = parseInt(lengthHeader)
+    const length = parseInt(RegExp(/bytes \d+-\d+\/(\d+)/).exec(contentRangeHeader)?.[1] ?? '')
     if (Number.isNaN(length)) {
-      throw new Error(`Could not interpret Content-Length: ${length}`)
+      throw new Error(`Could not interpret Content-Range: ${length}`)
     }
 
     const downloads: {
