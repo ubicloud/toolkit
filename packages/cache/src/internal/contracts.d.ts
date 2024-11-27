@@ -29,6 +29,7 @@ export interface ReserveCacheRequest {
   key: string
   version?: string
   cacheSize?: number
+  runId?: string
 }
 
 export interface ReserveCacheResponse {
