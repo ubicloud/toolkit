@@ -113,7 +113,7 @@ export async function getCacheEntry(
   )
   const resource = `cache?keys=${encodeURIComponent(
     keys.join(',')
-  )}&version=${version}`
+  )}&version=${version}&runId=${process.env['GITHUB_RUN_ID']}`
 
   const response = await retryTypedResponse('getCacheEntry', async () =>
     httpClient.getJson<ArtifactCacheEntry>(getCacheApiUrl(resource))
@@ -220,7 +220,8 @@ export async function reserveCache(
   const reserveCacheRequest: ReserveCacheRequest = {
     key,
     version,
-    cacheSize: options?.cacheSize
+    cacheSize: options?.cacheSize,
+    runId: process.env['GITHUB_RUN_ID']
   }
   const response = await retryTypedResponse('reserveCache', async () =>
     httpClient.postJson<ReserveCacheResponse>(
